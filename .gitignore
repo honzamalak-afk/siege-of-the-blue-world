@@ -1,0 +1,44 @@
+# Unity generated
+Library/
+Temp/
+Logs/
+obj/
+Build/
+Builds/
+UserSettings/
+
+# Unity cache
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# IDE
+.vs/
+*.suo
+*.user
+*.sln
+*.csproj
+.vscode/
+.idea/
+
+# UCAF runtime state (generated, not source)
+ucaf_workspace/commands/pending/
+ucaf_workspace/commands/done/
+ucaf_workspace/commands/errors/
+ucaf_workspace/commands/runtime_pending/
+ucaf_workspace/commands/runtime_done/
+ucaf_workspace/commands/runtime_signals.json
+ucaf_workspace/logs/
+ucaf_workspace/screenshots/
+ucaf_workspace/recordings/
+ucaf_workspace/streams/
+ucaf_workspace/output/
+ucaf_workspace/memory/
+
+# OS
+.DS_Store
+Thumbs.db
