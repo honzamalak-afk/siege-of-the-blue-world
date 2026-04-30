@@ -1,0 +1,138 @@
+# =============================================================================
+# 02 — PLAYER CONTROLLER, MOVEMENT, INVENTORY, NPC
+# =============================================================================
+# Implementační prompt: "Postav player controller, movement systém, inventář
+# a NPC velitele podle 02_player.yaml."
+# Zdroj: GreyboxSpec sekce 4, 5, 12.1
+# Dependencies: 01_world_map.yaml (potřebuje NavMesh + zóny)
+# =============================================================================
+
+player:
+  type: "third_person_shooter"
+  visual:
+    color: "blue"
+    shape: "capsule_vertical"
+    height_m: 2.0
+    radius_m: 0.5
+
+  # --- Movement speeds ---
+  movement_speeds:
+    crouch:  { kmh: 2,  ms: 0.56 }
+    walk:    { kmh: 5,  ms: 1.39 }
+    run:     { kmh: 11, ms: 3.06 }
+    sprint:  { kmh: 30, ms: 8.33 }
+
+  # --- Movement modifiers (z combat systému) ---
+  # Podrobnosti v 05_combat.yaml — zde jen reference
+  movement_modifiers_by_state:
+    critical_hit_torso: { speed_multiplier: 0.7, sprint_allowed: false, jump_allowed: false }
+    leg_hit_1: { speed_multiplier: 0.7,  sprint_allowed: false }
+    leg_hit_2: { speed_multiplier: 0.49, sprint_allowed: false }   # 0.7^2
+    leg_hit_3: { speed_multiplier: 0.34, sprint_allowed: false }   # 0.7^3
+
+  # --- Math validation (pro orientaci) ---
+  math_check:
+    note: "Hráč na 20m, sprint → dorazí za 2.4s. Alien teleport setup = 3s. Hráč stihne finish him (taktak)."
+
+  # --- Camera ---
+  camera:
+    perspective: "third_person"
+    over_shoulder: true
+
+# =============================================================================
+# INVENTORY — start equipment
+# =============================================================================
+inventory:
+  starting_loadout:
+    - id: "pistol"
+      type: "weapon_ranged"
+      role: "loud_high_stopping_power"
+      ammo: "infinite_greybox"
+      effective_range_m: 100
+      sound_radius_m: 50           # hostile sound
+      stopping_power: "instant_teleport_setup"
+      penetration: "tissue_only"
+      notes: "Loud → 'kulka v okolí' event aktivuje teleport block"
+
+    - id: "crossbow"
+      type: "weapon_ranged"
+      role: "quiet_low_stopping_power"
+      ammo: "infinite_greybox"
+      effective_range_m: 30
+      sound_radius_m: 5            # ambiguous, velmi vzácně
+      stopping_power: "5s_escape_window_then_3s_setup"
+      penetration: "tissue_only"
+      notes: "Quiet → alien má escape window 5s před teleportem (hledá cover)"
+
+    - id: "fists"
+      type: "weapon_melee"
+      role: "always_available_fallback"
+      range_m: [1, 2]
+      ammo: "infinite"
+      damage_rules: "stejné jako alien melee — viz 05_combat.yaml"
+      primary_target: "head"
+      notes: "1 stack hit, primary hlava (žádný instant kill jako u ranged headshot)"
+
+    - id: "explosive"
+      type: "quest_item"
+      count: 1
+      quest_locked: true            # použitelné jen na modul
+      install_time_s: 5
+      detonation_timer_s: 10
+      safe_distance_m: 20
+      install_radius_m: 2           # hráč musí zůstat v 2m radiu
+      install_protection: "pistol_shootable_only"  # jen pistole jiných enemies
+      notes: "Quest item — viz 07_quest_flow.yaml beat 4"
+
+    - id: "medikit"
+      type: "consumable"
+      count: 3                      # ⚠ greybox simplification (start)
+      heal_time_s: 3
+      heal_effect: "full_reset_all_body_part_counters"
+      conditions:
+        cannot_use_when: "v aktivním sight cone aliena"
+        ok_when: "investigation state"
+      vulnerability_during_heal: true
+      notes: "Pokud alien spatří hráče během 3s heal → heal POKRAČUJE, hráč vulnerable"
+
+    - id: "recon_drone"
+      type: "permanent_companion"
+      notes: "Viz 03_drone.yaml. NENÍ inventory item, je permanent companion."
+
+# =============================================================================
+# NPC — Velitel odboje (jediný NPC v greyboxu)
+# =============================================================================
+npcs:
+  - id: "commander"
+    name: "Velitel odboje"
+    location_zone: "hub"
+    visual:
+      color: "yellow"
+      shape: "capsule_vertical"
+    role: "quest_giver"
+    interactions:
+      - trigger: "approach_and_press_E"
+        beat: "quest_brief"
+        actions:
+          - "Vydá výbavu hráči (starting_loadout)"
+          - "Quest tracker: 'Najdi modul a znič ho'"
+      - trigger: "return_after_module_destroyed"
+        beat: "quest_complete"
+        actions:
+          - "Dialog: poděkování"
+          - "Nový úkol placeholder"
+          - "End screen se statistikami"
+
+    greybox_simplifications:
+      - "Drone respawne za 60s cooldown bez podmínky (V1 ekonomika dronu odložena)"
+      - "Single dialog tree, žádné branching choices"
+    notes: "⚠ ZMĚNA VŮČI Workflow v0.2: 3 NPC → 1 (jen velitel)"
+
+# =============================================================================
+# Acceptance criteria reference
+# =============================================================================
+acceptance_xlsx_sections:
+  - "Player controller"
+  - "Movement"
+  - "Inventory"
+  - "NPC"

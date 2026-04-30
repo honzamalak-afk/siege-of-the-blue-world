@@ -1,0 +1,216 @@
+# =============================================================================
+# 08 — TELEMETRY, DEBUG CONSOLE, METRICS
+# =============================================================================
+# Implementační prompt: "Implementuj telemetrii (Unity Analytics + CSV),
+# debug console s 10 commands a metriky podle 08_telemetry.yaml."
+# Zdroj: GreyboxSpec sekce 10, 14, 15
+# Dependencies: všechny předchozí (events emitují všechny systémy)
+# =============================================================================
+
+# =============================================================================
+# TELEMETRY SETUP
+# =============================================================================
+telemetry:
+  primary:
+    backend: "Unity Analytics (UGS)"
+    free_tier_limit: "50k MAU/měsíc"
+    free_tier_sufficient: true
+    dashboard_latency_h: 1
+    gdpr_required: false   # dev-only, Jan account
+
+  backup:
+    backend: "Local CSV file"
+    write_trigger: "po každém playthrough"
+    file_path_convention: "Logs/playthrough_<timestamp>.csv"
+
+  setup_requirements:
+    - "UGS account konfigurace"
+    - "Analytics SDK install (Unity Package Manager) — POZOR: vyžaduje souhlas Jana"
+    - "Custom Logger script (CSV writer)"
+
+# =============================================================================
+# CUSTOM EVENTS (Unity Analytics + CSV)
+# =============================================================================
+custom_events:
+  - name: "quest_start"
+    payload: ["timestamp", "zone"]
+
+  - name: "quest_end"
+    payload: ["result", "duration_s"]
+    result_values: ["WIN", "FAIL_death_before_install", "FAIL_death_during_install",
+                    "FAIL_blast_killer", "FAIL_death_during_return", "FAIL_esc_quit"]
+
+  - name: "alien_spawn"
+    payload: ["zone", "count", "type"]
+
+  - name: "alien_killed"
+    payload: ["zone", "weapon", "body_part", "distance_m"]
+
+  - name: "wardog_spawn"
+    payload: ["zone"]
+
+  - name: "wardog_killed"
+    payload: ["zone", "weapon"]
+
+  - name: "puppeteer_spawn"
+    payload: ["zone", "puppet_count"]
+
+  - name: "puppeteer_killed"
+    payload: ["kill_chain_triggered", "berserk_triggered"]
+
+  - name: "player_hit"
+    payload: ["body_part", "attacker_type", "weapon"]
+
+  - name: "player_critical_state"
+    payload: ["timestamp"]
+
+  - name: "player_death"
+    payload: ["cause", "zone", "duration_in_run_s"]
+
+  - name: "medikit_used"
+    payload: ["timestamp", "zone"]
+
+  - name: "drone_deployed"
+    payload: ["timestamp"]
+
+  - name: "drone_destroyed"
+    payload: ["zone", "hits_taken"]
+
+  - name: "drone_fall"
+    payload: ["zone", "recovered"]
+
+  - name: "migration_event"
+    payload: ["from_zone", "to_zone", "alien_count"]
+
+  - name: "installation_started"
+    payload: ["timestamp"]
+
+  - name: "installation_complete"
+    payload: ["timestamp"]
+
+  - name: "module_exploded"
+    payload: ["player_distance_at_explosion_m"]
+
+# =============================================================================
+# DEBUG CONSOLE
+# =============================================================================
+debug_console:
+  activation_key: "tilde (~)"   # Unity console standard
+  visibility:
+    developer_build: true
+    playtest_build: false   # disabled v playtest
+
+  commands:
+    - cmd: "teleport_to <zone>"
+      purpose: "Skok mezi zónami (hub / forest / module_zone)"
+
+    - cmd: "killall"
+      purpose: "Zničí všechny aktivní enemies"
+
+    - cmd: "refill_drone"
+      purpose: "Refill drone battery, restore HP"
+
+    - cmd: "force_spawn <type>"
+      purpose: "Spawnne entity (alien / puppet / puppeteer / wardog)"
+
+    - cmd: "force_critical_hit"
+      purpose: "Aktivuje critical state na hráči"
+
+    - cmd: "full_heal"
+      purpose: "Resetuje všechny body part counters"
+
+    - cmd: "override_spawnrate <zone> <rate>"
+      purpose: "Mění spawn pravděpodobnost (testing)"
+
+    - cmd: "godmode"
+      purpose: "Hráč invulnerable"
+
+    - cmd: "freecam"
+      purpose: "Volná kamera mimo player"
+
+    - cmd: "show_heatmap"
+      purpose: "Visualize spawn heatmap"
+
+# =============================================================================
+# METRICS (cíle pro playtest)
+# =============================================================================
+metrics:
+
+  quantitative:
+    - name: "playthrough_duration"
+      target_min: 30
+      target_max: 45
+      unit: "minutes"
+
+    - name: "death_count_per_playthrough"
+      target_min: 1
+      target_max: 3
+
+    - name: "drone_use_rate"
+      target_threshold: 0.70
+      unit: "fraction_of_encounters"
+      direction: "above"
+
+    - name: "stealth_vs_combat_ratio"
+      target_min: 0.40
+      target_max: 0.60
+      description: "stealth fraction"
+
+    - name: "spawn_distribution"
+      type: "log_only"
+
+    - name: "wardog_spawn_rate"
+      type: "log_only"
+
+    - name: "migration_events"
+      type: "log_only"
+
+    - name: "puppeteer_kill_chain_test"
+      type: "log_only"
+
+    - name: "body_part_hit_distribution"
+      type: "log_only"
+
+    - name: "crossbow_vs_pistol_use_ratio"
+      type: "log_only"
+
+    - name: "berserk_puppet_event_log"
+      type: "log_only"
+
+    - name: "drone_fall_count_and_recovery"
+      type: "log_only"
+
+    - name: "medikit_usage_timing"
+      type: "log_only"
+
+  qualitative:
+    method: "Jan intuice + telemetry data review"
+    questions:
+      - "Cítil jsi váhu lethality?"
+      - "Byly volby smysluplné?"
+      - "Cítíš teleport spawn jako fair?"
+      - "Pochopil jsi Puppeteer kill chain mechaniku?"
+      - "Pochopil jsi rozdíl mezi pistolí a crossbow stopping power?"
+      - "Cítil jsi paniku během berserk Puppet attacku?"
+      - "Cítil jsi drone fall jako vážný moment?"
+
+# =============================================================================
+# PLAYTEST SETUP
+# =============================================================================
+playtest:
+  playtester: "Jan only"
+  playthrough_count: [3, 5]
+  format: "solo_open_iteration"
+  data_sources: ["Unity Analytics dashboard", "CSV backup"]
+  formal_notes: false   # intuice + telemetry
+  external_playtest:
+    enabled: false
+    deferred_to: "next_milestone"
+
+# =============================================================================
+# Acceptance criteria reference
+# =============================================================================
+acceptance_xlsx_sections:
+  - "Telemetry — events"
+  - "Debug console — commands"
+  - "Metrics — quantitative thresholds"

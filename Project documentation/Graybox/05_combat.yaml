@@ -1,0 +1,240 @@
+# =============================================================================
+# 05 — COMBAT SYSTEM (BODY-PART DAMAGE & WEAPON ENERGY)
+# =============================================================================
+# Implementační prompt: "Implementuj combat systém s body-part damage,
+# weapon stopping power, sound detection, hit detection podle 05_combat.yaml."
+# Zdroj: GreyboxSpec sekce 11, 12.2-12.7
+# Dependencies: 02_player.yaml (player base), navazuje na 04_enemies.yaml
+# ⚠ ZÁSADNÍ: HP-based combat NAHRAZEN body-part hit determinismem.
+# =============================================================================
+
+design_philosophy:
+  - "HP NENÍ primary stat — body-part rozhodnutí je determinant"
+  - "Weapon energy = stopping power (pistole > crossbow > pěsti)"
+  - "Asymetrie hráč vs. alien:"
+  - "  → Hráč při critical hit musí najít ošetření"
+  - "  → Alien při critical hit teleportuje pryč (finish him window)"
+
+# =============================================================================
+# WEAPON DESIGN PILLAR
+# =============================================================================
+weapons:
+  greybox_implementation: "Bez full energy systému. Jen STOPPING POWER rozdíl."
+
+  pistol:
+    penetration: "tissue_only_no_armor"
+    effective_range_m: 100  # headshot range
+    stopping_power: "MEDIUM"
+    effect_on_alien: "instant_teleport_setup"
+    sound_radius_m: 50
+    sound_classification: "hostile"
+
+  crossbow:
+    penetration: "tissue_only_no_armor"
+    effective_range_m: 30
+    stopping_power: "LOW"
+    effect_on_alien: "5s_escape_window_then_3s_setup"
+    sound_radius_m: 5
+    sound_classification: "ambiguous_rare"
+
+  fists:
+    range_m: [1, 2]
+    stopping_power: "LOW"
+    damage_rules: "stejné jako alien melee"
+    notes: "always available, no ammo"
+
+  long_rifle_v1plus:
+    enabled_in_greybox: false
+    penetration: "armor_close_range"
+    effective_range_m: 800
+    stopping_power: "HIGH"
+
+# =============================================================================
+# BODY-PART HIT DETECTION (greybox)
+# =============================================================================
+hit_detection:
+  method: "vertical_Y_subdivision_on_capsule"
+  implementation_note: "V V1: bone-based hit detection (skinned humanoid model)"
+
+  vertical_zones:
+    - y_range_percent: [0, 25]
+      center_hit: "legs"
+      side_hit_x_offset: "legs"
+    - y_range_percent: [25, 75]
+      center_hit: "torso"
+      side_hit_x_offset: "torso"
+    - y_range_percent: [75, 85]
+      center_hit: "torso"
+      side_hit_x_offset: "arms_lateral"
+    - y_range_percent: [85, 100]
+      center_hit: "head_centered"
+      side_hit_x_offset: "arms_lateral"
+
+# =============================================================================
+# PLAYER — body-part damage system
+# =============================================================================
+player_damage:
+  cumulative: true
+  reset_on_full_heal: true
+  reset_trigger: "medikit_full_heal OR hub_medic_visit"
+
+  torso:
+    hit_1: { effect: "critical_hit_state" }
+    hit_2: { effect: "instant_death" }
+
+  legs:
+    multiplier_per_hit: 0.7
+    hit_1: { speed_multiplier: 0.7,  sprint: false }
+    hit_2: { speed_multiplier: 0.49, sprint: false }
+    hit_3: { speed_multiplier: 0.34, sprint: false }
+    hit_4: { effect: "instant_death" }
+
+  arms:
+    hit_1: { effect: "mild_aim_penalty_light_shake" }
+    hit_2: { effect: "strong_shake_one_handed_only" }
+    hit_3: { effect: "instant_death" }
+
+  head:
+    ranged_pistol_or_crossbow_or_alien_rifle:
+      hit_1: { effect: "instant_death" }
+    melee_alien_or_fists:
+      hit_1: { effect: "critical_state_camera_shake_player_can_escape" }
+      hit_2: { effect: "death" }
+
+# Critical hit state — detailní spec
+critical_hit_state:
+  trigger: "torso_hit_1x"
+  movement:
+    speed_multiplier: 0.7
+    sprint_allowed: false
+    jump_allowed: false
+  aim:
+    penalty: "shaking_camera"
+  visual_fx:
+    - "blurred_camera"
+    - "blood_overlay"
+    - "near_black_vignette + faint_red_screen_edge"
+  capabilities:
+    can_shoot: true   # s penalty
+  time_budget:
+    untreated_to_death_s: 120     # 2 min
+    with_medikit_to_death_s: 300  # 5 min
+    full_heal_at: "hub_medic"
+
+# =============================================================================
+# ENEMY damage profiles — quick reference (detail v 04_enemies.yaml)
+# =============================================================================
+enemy_damage_profiles:
+  alien:
+    head: { hits: 1, effect: "instant_death" }
+    torso: { hits: 1, effect: "teleport_attempt" }
+    legs: { hits_to_kill: 2, intermediate: "limp + teleport_check" }
+    arms: { hits_to_kill: 2, intermediate: "cannot_attack + teleport_check" }
+  puppet:
+    rule: "ONE_SHOT_ONE_KILL_anywhere_anyweapon"
+  puppeteer:
+    rule: "stejné jako alien"
+  wardog:
+    rule: "ONE_SHOT_ONE_KILL_anywhere_anyweapon"
+
+# =============================================================================
+# ENEMY ATTACKS proti hráči
+# =============================================================================
+enemy_attacks_to_player:
+  alien_ranged:
+    stack_hit_per_shot: 1
+    headshot: "instant_death"
+
+  alien_melee:
+    primary_target: "head"
+    secondary_target: "torso"
+    head_hit_1: "critical_state_player_can_escape"
+    head_hit_2: "death"
+    torso_hit_1: "critical_state"
+    torso_hit_2: "death"
+
+  puppet_melee:
+    profile: "stejný jako alien_melee"
+    attack_speed_multiplier: 1.5
+    primary_target: "head"
+
+  wardog_melee:
+    primary_target: "player_legs"
+    knock_down_rule: "2+ leg hits za 5s rolling window → pád → headshot → instant death"
+
+# =============================================================================
+# SOUND DETECTION
+# =============================================================================
+sound_detection:
+  sources:
+    pistol_shot:    { range_m: 50, classification: "hostile" }
+    crossbow_shot:  { range_m: 5,  classification: "ambiguous_rare" }
+    sprint:         { range_m: 15, classification: "ambiguous" }
+    walk:           { range_m: 5,  classification: "ambiguous" }
+    crouch:         { range_m: 0,  classification: "silent" }
+    human_voice_or_music: { range_m: "TBD", classification: "hostile" }
+    wardog_howl:    { range_m: 50, classification: "hostile" }
+
+# =============================================================================
+# INVESTIGATION STATE (alien reaction to sound)
+# =============================================================================
+investigation:
+  hostile_sound:
+    triggers: ["pistol", "voice", "music", "wardog_howl"]
+    approach_mode: "run"
+    search_duration_s: 20
+  ambiguous_sound:
+    triggers: ["crossbow", "sprint", "walk"]
+    approach_mode: "walk"
+    search_duration_s: 5
+  post_arrival_behavior:
+    - "Alien dorazí k zvukovému zdroji"
+    - "Sight cone aktivní, rozhlíží se"
+    - "Po timeout bez detection → vrátí se k patrolu"
+
+# =============================================================================
+# BULLET NEAR ALIEN (teleport AI input)
+# =============================================================================
+bullet_near_alien:
+  detection_volume: "2m_cylinder_around_alien"
+  trigger_condition: "kulky přímo letí na aliena nebo velmi blízko"
+  zone_wide_aggro: false
+  multi_alien_implication: |
+    Hráč střílí na aliena A → alien B (mimo trajektorii) MŮŽE zahájit teleport,
+    protože každý alien je individuální agent, ale teleport check vyžaduje
+    "no bullet within 2m cylinder around THIS alien".
+
+# =============================================================================
+# MEDIKIT
+# =============================================================================
+medikit:
+  starting_count: 3
+  heal_time_s: 3
+  heal_effect: "full_reset_all_body_part_counters"
+  conditions_to_start:
+    forbidden: "hráč v aktivním sight cone aliena"
+    allowed: "investigation state OK (alien hledá, ale nevidí)"
+  during_3s_heal:
+    interruptible: false
+    if_alien_sees_player: "heal pokračuje, hráč VULNERABLE (nemůže střílet)"
+
+# =============================================================================
+# VFX PLACEHOLDERS (pro greybox)
+# =============================================================================
+vfx_placeholders:
+  critical_hit_torso: "Blízký černý vignette + slabý červený okraj obrazovky"
+  body_part_hit_feedback: "Malé '+1' číslo nad kapslí na 0.5s"
+  teleport_spawn_2s_telegraph: "Rotující kruh + pulse VFX na zemi"
+  teleport_away_3s_setup: "Modrý flash + particle burst"
+  critical_hit_camera: "Třesoucí se kamera + blur"
+  module_explosion: "Placeholder explosion sphere + sound"
+
+# =============================================================================
+# Acceptance criteria reference
+# =============================================================================
+acceptance_xlsx_sections:
+  - "Combat — body part damage"
+  - "Weapons — stopping power"
+  - "Sound detection"
+  - "Investigation"
+  - "Medikit"

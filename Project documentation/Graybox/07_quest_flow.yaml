@@ -1,0 +1,187 @@
+# =============================================================================
+# 07 — QUEST FLOW & STATE MACHINE
+# =============================================================================
+# Implementační prompt: "Implementuj quest flow s 5 beats, výbušnina
+# mechanika, win/fail states podle 07_quest_flow.yaml."
+# Zdroj: GreyboxSpec sekce 2, 9
+# Dependencies: 02_player.yaml (NPC dialog), 06_spawn_system.yaml (puppeteer trigger)
+# =============================================================================
+
+quest:
+  id: "destroy_alien_module"
+  hook: |
+    Hrdina je součást odboje proti invazi. Ve městě je hub odboje
+    a z něho jde skrz les zničit alien modul.
+
+  greybox_constraints:
+    save_load_enabled: false   # ⚠ DISABLED v greyboxu (cleaner telemetry)
+
+# =============================================================================
+# QUEST BEATS (state machine)
+# =============================================================================
+beats:
+
+  # ---------------------------------------------------------------------------
+  - id: "beat_1_hub"
+    name: "Hub — quest start"
+    zone: "hub"
+    state: "non_combat_dialog"
+    on_enter:
+      - "Hráč spawne v hubu"
+      - "Quest tracker UI: 'Promluv s velitelem'"
+    interactions:
+      - npc: "commander"
+        action: "approach + press E"
+        dialog: "Quest brief: 'Najdi modul a znič ho'"
+        on_complete:
+          - "Vydat výbavu (pistol, crossbow, fists, explosive×1, medikit×3)"
+          - "Set quest tracker: 'Najdi modul a znič ho'"
+          - "Transition to beat_2"
+
+  # ---------------------------------------------------------------------------
+  - id: "beat_2_forest"
+    name: "Les — exploration"
+    zone: "forest"
+    state: "free_open_area"
+    transition: "free"   # hráč přejde když chce
+    on_enter:
+      - "Spawn systém aktivní pro forest (5%/0.25%/0.0125% per minute)"
+    player_options:
+      - "drone_scout"
+      - "stealth_movement"
+      - "loud_combat"
+    scripted_encounters: []   # ŽÁDNÉ scriptované — jen procedural spawn
+    completion: "hráč přejde do module_zone"
+
+  # ---------------------------------------------------------------------------
+  - id: "beat_3_pre_module"
+    name: "Před modulem — escalation + Puppeteer"
+    zone: "module_zone"
+    state: "high_density_combat"
+    on_enter:
+      - "Spawn rate eskaluje (20%/4%/0.8% per minute)"
+      - "TRIGGER scripted: spawn 1 Puppeteer + 1-4 Puppets"
+    player_choice:
+      option_a:
+        label: "Kill Puppeteer (kill chain)"
+        consequence: "head/torso → all puppets die instantly"
+      option_b:
+        label: "Attrition Puppets"
+        consequence: "Manuálně zabít každého Puppet — pomalejší, riskantnější"
+    completion: "hráč dojde k modulu (~2m distance)"
+
+  # ---------------------------------------------------------------------------
+  - id: "beat_4_module_climax"
+    name: "Modul — instalace výbušniny + escape"
+    zone: "module_zone"
+    state: "climax"
+
+    installation_phase:
+      trigger: "hráč ≤2m od modulu, stiskne E"
+      duration_s: 5
+      constraints:
+        player_movement_radius_m: 2   # výjít z radia → reset
+        allowed_player_action: "pistol_shoot_only"
+        on_movement_outside_radius: "reset_installation"
+
+    detonation_phase:
+      trigger: "installation_complete"
+      timer_s: 10
+      win_condition: "player distance from module > 20m at t=0"
+      countdown_ui: true
+
+    win:
+      condition: "modul vybuchne + hráč přežije"
+      transition: "beat_5_return"
+
+    fail_paths:
+      - "smrt_pred_install"
+      - "smrt_during_install (pohyb mimo radius nebo enemy zabije)"
+      - "blast_killer (hráč nestihl >20m)"
+      - "smrt_pri_navratu"
+      - "esc_quit"
+
+  # ---------------------------------------------------------------------------
+  - id: "beat_5_return"
+    name: "Návrat — zpět do hubu"
+    only_if: "beat_4_win"
+    state: "free_movement_back_to_hub"
+    on_enter:
+      - "Quest tracker: 'Vrať se k veliteli'"
+      - "Spawn systém aktivní (cesta zpět)"
+    on_arrival_at_commander:
+      - "Dialog: poděkování + nový úkol (placeholder)"
+      - "Transition to end_screen with statistics"
+
+# =============================================================================
+# QUEST END STATES
+# =============================================================================
+end_states:
+
+  win:
+    trigger: "beat_5 dialog complete"
+    screen: "end_screen_with_statistics"
+    telemetry:
+      event: "quest_end"
+      payload: { result: "WIN", duration: "<auto>" }
+
+  fail:
+    paths:
+      - id: "death_before_install"
+        location: "anywhere before beat_4 installation_phase complete"
+      - id: "death_during_install"
+        location: "during 5s installation"
+      - id: "blast_killer"
+        location: "during 10s detonation, distance < 20m at t=0"
+      - id: "death_during_return"
+        location: "during beat_5"
+      - id: "esc_quit"
+        location: "any beat"
+    on_fail:
+      - "Show fail screen with cause"
+      - "Telemetry event: quest_end, payload: { result: 'FAIL_<path>', duration }"
+
+# =============================================================================
+# Pseudocode — state machine skeleton
+# =============================================================================
+pseudocode: |
+  state = "beat_1_hub"
+  WHILE state != "end_screen":
+    SWITCH state:
+      CASE "beat_1_hub":
+        WAIT FOR commander_dialog_complete
+        give_starting_loadout()
+        state = "beat_2_forest"
+      
+      CASE "beat_2_forest":
+        enable_spawn_for("forest")
+        WAIT FOR player.position IN module_zone
+        state = "beat_3_pre_module"
+      
+      CASE "beat_3_pre_module":
+        enable_spawn_for("module_zone", rate="high")
+        spawn_puppeteer_event(puppet_count=random(1,4))
+        WAIT FOR distance(player, module) <= 2 AND input == E
+        state = "beat_4_module_climax"
+      
+      CASE "beat_4_module_climax":
+        IF run_installation(5s):
+          IF run_detonation(10s) AND distance(player, module) > 20:
+            state = "beat_5_return"
+          ELSE:
+            trigger_fail("blast_killer")
+        ELSE:
+          trigger_fail("death_during_install")
+      
+      CASE "beat_5_return":
+        WAIT FOR player NEAR commander
+        play_completion_dialog()
+        state = "end_screen"
+
+# =============================================================================
+# Acceptance criteria reference
+# =============================================================================
+acceptance_xlsx_sections:
+  - "Quest — beats progression"
+  - "Quest — module installation"
+  - "Quest — win/fail states"

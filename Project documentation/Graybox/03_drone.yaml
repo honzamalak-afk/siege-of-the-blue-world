@@ -1,0 +1,86 @@
+# =============================================================================
+# 03 — RECON DRONE (PERMANENT COMPANION)
+# =============================================================================
+# Implementační prompt: "Implementuj Recon Drone podle 03_drone.yaml."
+# Zdroj: GreyboxSpec sekce 6
+# Dependencies: 02_player.yaml (drone follows player), 04_enemies.yaml (alien detection)
+# ⚠ ZMĚNA VŮČI Tech Spec v0.1: Drone NENÍ inventory item, je PERMANENT companion.
+# =============================================================================
+
+drone:
+  id: "recon_drone"
+  type: "permanent_companion"
+  visual:
+    shape: "small_cube"
+    placeholder_color: "white"
+
+  # --- Default mode: follow player ---
+  follow_behavior:
+    mode: "always_on_around_player"
+    auto_follow: true               # létá kolem hráče permanentně
+    detached_when_player_moves: false
+
+  # --- Active control mode (camera switch) ---
+  control_mode:
+    activation: "hotkey_toggle"     # hráč přepne do drone módu
+    player_state_during_control: "stationary"  # hráč zůstává nehybný
+    main_screen: "drone_camera"
+    minimap_corner: "player_position_indicator"
+    controls: "WASD"
+
+  # --- Stats (FINAL) ---
+  stats:
+    max_range_from_player_m: 1000   # 1 km
+    battery_total_distance_m: 3000  # 3 km letu — vybíjí se JEN mimo hráče
+    recharge_time_s: 5              # u hráče = full battery za 5s
+    speed_ms: 15
+    hp: 2                           # 2 hits = destroyed
+
+  # --- Battery management ---
+  battery:
+    drain_rule: "only_when_away_from_player"
+    warning_threshold_percent: 30
+    warning_ui_text: "Low battery, return drone"
+    when_depleted_away_from_player: "drone_falls_to_ground"
+
+  # --- Fall behavior (battery depleted away) ---
+  fall_behavior:
+    becomes_physical_object: true
+    pickup_distance_m: 1            # hráč musí být do 1m
+    pickup_input: "E"
+    pickup_result: "instant_recovery_to_companion"
+    if_not_recovered: "drone_lost_must_buy_new"
+    greybox_lost_recovery: "auto_respawn_60s_cooldown"
+
+  # --- Destruction ---
+  destruction:
+    hits_to_destroy: 2
+    greybox_respawn:
+      auto: true
+      cooldown_s: 60
+      ui_feedback: "Drone destroyed. Respawn in 60s. (V1: bude vyžadovat artefakt)"
+    v1_economy_note: "V V1: výměna alien artefaktu za nový dron (greybox to ignoruje)"
+
+  # --- Detection by aliens ---
+  detection_by_aliens:
+    ground_aliens:
+      detection_radius_m: 10        # sféricky kolem aliena
+      reaction: "okamžitě střílí na drone (1-2 hits = destroyed)"
+      player_consequence: "ŽÁDNÝ — alien neví, kde je operátor"
+      tactical_escalation: false
+    sky_surveillance_v1plus:
+      enabled_in_greybox: false
+      note: "Alien věže / sky surveillance jsou V1+ feature, nebudou v greyboxu"
+
+design_rationale: |
+  Drone má být risk/reward tool:
+  - Hráč může scoutovat dopředu (low risk pro hráče, high risk pro drone)
+  - Pokud drone padne mimo hráče → hráč musí dojít fyzicky (riziko)
+  - 60s respawn v greyboxu je simplification — V1 bude vyžadovat artefakt
+
+# Acceptance criteria reference
+acceptance_xlsx_sections:
+  - "Drone — companion mechanics"
+  - "Drone — battery & fall"
+  - "Drone — destruction & respawn"
+  - "Drone — alien detection"

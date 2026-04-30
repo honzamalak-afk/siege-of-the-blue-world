@@ -1,0 +1,107 @@
+# =============================================================================
+# SIEGE OF THE BLUE WORLD — GREYBOX YAML INDEX
+# =============================================================================
+# Účel: Master index všech YAML souborů greybox specifikace.
+# Použití pro Claude Code: "Otevři 00_index.yaml a podle pořadí implementuj."
+# Zdroj: SiegeBlueWorld_GreyboxSpec_v0_4_FINAL.md
+# =============================================================================
+
+meta:
+  project: "Siege of the Blue World"
+  phase: "1.5 — Greybox Validation"
+  spec_version: "0.4-FINAL"
+  yaml_version: "1.0"
+  engine: "Unity"
+  platform: "PC"
+  target_audience: "Claude Code (AI-assisted implementation)"
+
+# Pořadí implementace — každý soubor = 1 logický prompt pro Claude Code.
+# Závislosti vyjadřují, co musí být hotové předtím.
+implementation_order:
+
+  - step: 1
+    file: "01_world_map.yaml"
+    title: "Greybox mapa & terén"
+    prompt_template: "Implementuj greybox mapu podle 01_world_map.yaml."
+    depends_on: []
+    estimated_scope: "Open-area terén 500×200m, 3 zóny, NavMesh, cover placement"
+
+  - step: 2
+    file: "02_player.yaml"
+    title: "Player controller, inventář, zdraví"
+    prompt_template: "Implementuj player podle 02_player.yaml."
+    depends_on: ["01_world_map.yaml"]
+    estimated_scope: "TPS controller, movement speeds, inventář (pistol/crossbow/pěsti/výbušnina/medikit), body-part HP counter"
+
+  - step: 3
+    file: "05_combat.yaml"
+    title: "Combat system — body-part damage & weapon energy"
+    prompt_template: "Implementuj combat systém podle 05_combat.yaml."
+    depends_on: ["02_player.yaml"]
+    estimated_scope: "Body-part hit detection (vertical Y subdivision), weapon stopping power, medikit, critical state"
+
+  - step: 4
+    file: "04_enemies.yaml"
+    title: "Enemy typy + AI"
+    prompt_template: "Implementuj 4 typy enemy podle 04_enemies.yaml."
+    depends_on: ["05_combat.yaml"]
+    estimated_scope: "Alien (teleport AI), Puppet, Puppeteer (kill chain + berserk), Wardog (tracking)"
+
+  - step: 5
+    file: "03_drone.yaml"
+    title: "Recon Drone companion"
+    prompt_template: "Implementuj drone podle 03_drone.yaml."
+    depends_on: ["02_player.yaml", "04_enemies.yaml"]
+    estimated_scope: "Always-on companion, camera switch, battery, fall behavior, alien detection"
+
+  - step: 6
+    file: "06_spawn_system.yaml"
+    title: "Spawn manager — kaskádové hody"
+    prompt_template: "Implementuj spawn systém podle 06_spawn_system.yaml."
+    depends_on: ["04_enemies.yaml", "01_world_map.yaml"]
+    estimated_scope: "3 nezávislé hody/min per zóna, soft cap, migrace, teleport VFX, wardog attachment"
+
+  - step: 7
+    file: "07_quest_flow.yaml"
+    title: "Quest flow + state machine"
+    prompt_template: "Implementuj quest flow podle 07_quest_flow.yaml."
+    depends_on: ["02_player.yaml", "06_spawn_system.yaml"]
+    estimated_scope: "5 beats (Hub → Les → Před modulem → Modul → Návrat), výbušnina mechanika, win/fail states"
+
+  - step: 8
+    file: "08_telemetry.yaml"
+    title: "Telemetrie + debug console"
+    prompt_template: "Implementuj telemetrii podle 08_telemetry.yaml."
+    depends_on: ["07_quest_flow.yaml"]
+    estimated_scope: "Unity Analytics, CSV logger, 19 custom events, debug console s 10 commands"
+
+# Co Claude Code MUSÍ udělat předem (každý prompt)
+preflight_checklist:
+  - "Otevři SiegeBlueWorld_GreyboxAcceptanceCriteria_v0_1.xlsx — najdi relevantní acceptance kritéria"
+  - "Po každém větším milníku zastavit a ukázat výsledek"
+  - "Po každé sekci mark relevantní body v acceptance criteria xlsx (✅/❌/⚠)"
+
+# Co Claude Code NESMÍ bez souhlasu
+forbidden_actions:
+  - "Mazat soubory mimo Assets/"
+  - "Měnit globální Unity settings"
+  - "Instalovat / odebírat package"
+  - "Cokoliv s git"
+  - "Měnit cokoliv v PRD / Tech Spec / Workflow / Quest Design / GreyboxSpec dokumentech"
+
+# Komunikační pravidla pro Claude Code
+communication_rules:
+  - "Když narazíš na něco neočekávaného uprostřed úkolu: komunikuj"
+  - "Vždy potvrď dokončení úkolu explicitně"
+  - "Vysvětli failures s důvody a doporučeními"
+  - "Ukazuj jen změněné code blocks, ne celé soubory"
+  - "Nikdy nepřidávej unrequested features"
+  - "Po 2 neúspěšných pokusech zastavit a reportovat"
+
+# Reference na související dokumenty
+related_docs:
+  - "SiegeBlueWorld_Workflow_v0_2.md — Fáze 1.5"
+  - "SiegeBlueWorld_QuestDesign_v0_1.md"
+  - "SiegeBlueWorld_TechSpec_v0_1.md"
+  - "PRD_Siege_of_the_Blue_World_v0_2.md"
+  - "SiegeBlueWorld_GreyboxAcceptanceCriteria_v0_1.xlsx"

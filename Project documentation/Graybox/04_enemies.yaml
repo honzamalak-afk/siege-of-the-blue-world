@@ -1,0 +1,231 @@
+# =============================================================================
+# 04 — ENEMY TYPES + AI
+# =============================================================================
+# Implementační prompt: "Implementuj 4 typy enemy s body-part damage AI
+# podle 04_enemies.yaml."
+# Zdroj: GreyboxSpec sekce 7, 11.4–11.7, 11.9, 12.2, 12.8
+# Dependencies: 05_combat.yaml (body-part damage system base)
+# =============================================================================
+
+# Combat AI obecný princip pro greybox:
+greybox_combat_ai:
+  detection_trigger: "sight_cone OR sound"
+  reaction: "okamžitý útok"  # NO cover seeking (V1+ feature)
+  attack_type_by_range:
+    melee_range_m: 2
+    above_melee: "ranged_attack"
+    within_melee: "melee_attack_to_head"
+
+# =============================================================================
+# 1. ALIEN
+# =============================================================================
+alien:
+  id: "alien"
+  visual: { color: "green", shape: "capsule_vertical" }
+
+  movement_speeds:
+    crouch:        { kmh: 2.30,  ms: 0.64 }
+    walk_patrol:   { kmh: 5.75,  ms: 1.60 }
+    run_chase:     { kmh: 12.65, ms: 3.52 }
+    sprint_chase:  { kmh: 34.50, ms: 9.58 }
+    note: "+15% rychlejší než hráč ve všech módech"
+
+  detection:
+    sight_cone_angle_deg: 60
+    sight_range_m: 30
+    sound_response: "viz 05_combat.yaml — sound detection table"
+
+  attack:
+    types: ["ranged", "melee"]
+    ranged_damage: "1 stack hit per zásah, headshot = instant death"
+    melee_damage: "primary head, secondary torso (viz 05_combat.yaml)"
+
+  body_part_damage:
+    # Hits required per body part (alien je o dost křehčí než hráč)
+    head:  { hits_to_kill: 1, effect_first_hit: "instant_death" }
+    torso: { hits_to_trigger: 1, effect: "teleport_attempt" }
+    legs:  { hits_to_kill: 2, effect_first_hit: "limp + teleport_check" }
+    arms:  { hits_to_kill: 2, effect_first_hit: "cannot_attack + teleport_check" }
+
+  teleport_ai:
+    triggers:
+      torso_hit:
+        condition: "always"
+        action: "teleport_setup"
+      leg_or_arm_hit:
+        conditions_all:
+          - "distance_player_to_alien_m > 20"
+          - "no_bullet_within_2m_cylinder_in_last_2s"
+        action: "teleport_setup"
+
+    setup_phase:
+      duration_s: 3
+      alien_state: "stationary, no_attack"
+      design_label: "finish_him_window"
+      after_3s: "alien_disappears_safely"
+
+    pseudocode: |
+      IF (alien má noha/ruka hit) AND
+         (distance hráč → alien > 20m) AND
+         (no bullet within 2m cylinder around alien in last 2s)
+      THEN teleport_setup()
+
+  weapon_response:
+    pistol_torso_hit: "okamžitý teleport_setup (3s)"
+    crossbow_torso_hit:
+      phase_1_escape_window_s: 5
+      phase_1_behavior: "alien sprintuje k nejbližšímu cover/keři/budově"
+      phase_1_timeout_action: "zahájí teleport_setup"
+      phase_2_setup_s: 3
+      map_requirement: "Cover každých ~10-15m (viz 01_world_map.yaml)"
+
+# =============================================================================
+# 2. PUPPET (zotročený člověk, melee-only)
+# =============================================================================
+puppet:
+  id: "puppet"
+  visual: { color: "orange", shape: "capsule_vertical" }
+  lore: |
+    Lab-modified člověk, mozek napojený na alien tech.
+    Vyžaduje koncentraci Puppeteera pro život.
+
+  movement_speeds:
+    note: "Stejné jako alien (+15% nad hráče)"
+    walk_patrol:  { kmh: 5.75 }
+    run_chase:    { kmh: 12.65 }
+
+  attack:
+    types: ["melee_only"]    # ŽÁDNÝ ranged
+    range_m: 2
+    melee_speed_multiplier: 1.5  # silnější lab-modified člověk
+    primary_target: "head"
+
+  detection:
+    sight_cone_angle_deg: 60
+    sight_range_m: 30
+    independent: true
+    telepathy_link: "sdílí detection s Puppeteerem"
+
+  body_part_damage:
+    rule: "ONE_SHOT_ONE_KILL"
+    applies_to: "kdekoli, jakákoliv zbraň, jakákoliv body part"
+    rationale: "Jakékoli zranění → odpojení od Puppeteera → smrt"
+
+  spawn_rule: "vždy s Puppeteerem (1-4 random count)"
+  v1plus_note: "Puppety jako 'otroci na práci' mimo combat (moral dilema)"
+
+# =============================================================================
+# 3. PUPPETEER (alien telepatický operator)
+# =============================================================================
+puppeteer:
+  id: "puppeteer"
+  visual: { color: "purple", shape: "capsule_vertical" }
+
+  movement_speeds: "stejné jako alien"
+
+  control:
+    max_simultaneous_puppets: 4
+    puppet_movement_radius_m: 10  # kromě berserk módu
+
+  body_part_damage: "stejný pattern jako alien"
+  has_teleport: true   # stejný mechanismus jako alien
+  weapon_response_to_pistol_vs_crossbow: "stejný jako alien"
+
+  # === KILL CHAIN — kritická mechanika ===
+  kill_chain:
+    head_hit_1x:
+      puppeteer_state: "death"
+      puppet_response: "všichni Puppets okamžitě zemřou"
+    torso_hit_1x:
+      puppeteer_state: "teleport_attempt"
+      puppet_response: "všichni Puppets okamžitě zemřou (i když Puppeteer uteče)"
+    leg_or_arm_hit_1x:
+      puppeteer_state: "limping / cannot_attack"
+      puppet_response: "ENTER BERSERK MODE"
+
+  berserk_mode:
+    description: "Puppets jsou bez kontroly, maximální agresivita"
+    behaviors:
+      - "IGNORUJÍ 10m radius limit"
+      - "Sprintují k hráči až do melee (50m+ od Puppeteera)"
+      - "Maximální agresivita"
+    end_conditions:
+      - trigger: "Puppeteer úspěšně teleportuje pryč"
+        result: "Puppets se zastaví → 2s telepatická ozvěna → padnou"
+      - trigger: "Puppeteer zabit (head/torso)"
+        result: "Puppets okamžitě padnou"
+
+  spawn_rule: "scriptovaný (ne v běžném loopu) — viz 06_spawn_system.yaml"
+
+# =============================================================================
+# 4. WARDOG (mimozemský pes)
+# =============================================================================
+wardog:
+  id: "wardog"
+  visual:
+    color: "red"
+    shape: "capsule_horizontal"   # ležící — důležité pro hit detection
+  lore: "Mimozemský analog psa v armádě"
+
+  movement_speeds:
+    patrol_with_alien:  { kmh: 5.75 }   # synchronizovaná s alien walk
+    chase:              { kmh: 45 }     # +50% nad alien sprint, hráč nemůže utéct
+
+  detection:
+    own_sight_cone: false
+    relies_on: "smell + alien handler"
+
+  attack:
+    type: "melee"
+    primary_target: "player_legs"   # deterministicky
+    player_escape_possible: false   # rychlejší než hráč sprint (45 vs 30 km/h)
+
+  body_part_damage:
+    rule: "ONE_SHOT_ONE_KILL"
+    applies_to: "kdekoli, jakákoliv zbraň"
+
+  combat_dynamics:
+    rate_of_change_attack:
+      window_s: 5
+      hits_in_window_to_knock_down: 2  # 2+ leg hits za 5s = pád hráče
+      knock_down_consequence: "wardog má access k hlavě → instant death"
+
+  tracking_system:
+    trail_decay_s: 60                # 1 minuta
+    trail_detection_radius_m: 2
+    crouch_detectable: true          # smell, ne sound — crouch nepomáhá
+    pursuit_speed_kmh: 45
+    trail_type: "linear_path_real_footsteps"
+
+  audio_alerts:
+    howl_1_scent_acquired:
+      effect: "alien handler vypustí wardog"
+      sound_radius_m: null
+    howl_2_catch:
+      sound_radius_m: 50              # alarm jako pistol shot
+      classified_as: "hostile_sound"
+
+  spawn_rule:
+    never_alone: true
+    attached_to_alien_spawn: true
+    probability:
+      module_zone: 0.10
+      other_zones: 0.02
+
+# =============================================================================
+# 5. HOSTILE HUMAN (V1+ — NE V GREYBOXU)
+# =============================================================================
+hostile_human:
+  id: "hostile_human"
+  visual: { color: "gray", shape: "capsule_vertical" }
+  enabled_in_greybox: false
+  note: "V1+ feature, nebudou v greyboxu"
+
+# =============================================================================
+# Acceptance criteria reference
+# =============================================================================
+acceptance_xlsx_sections:
+  - "Enemy — Alien"
+  - "Enemy — Puppet"
+  - "Enemy — Puppeteer + kill chain"
+  - "Enemy — Wardog"

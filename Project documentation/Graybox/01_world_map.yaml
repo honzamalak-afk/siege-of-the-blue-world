@@ -1,0 +1,97 @@
+# =============================================================================
+# 01 — WORLD MAP & TERRAIN
+# =============================================================================
+# Implementační prompt: "Postav greybox mapu — 3 open-area zóny, NavMesh,
+# cover každých 10-15m, color coding entit."
+# Zdroj: GreyboxSpec sekce 1, 3, 13
+# Dependencies: žádné (první implementační krok)
+# =============================================================================
+
+design_intent: |
+  Plný greybox dle Workflow 1.5.1 — open-area mapa se všemi encounter zónami.
+  Cíl: ověřit, že core systémy fungují DOHROMADY.
+  Princip: funkční prototyp ze šedých kostek a UI textu. Žádné finální assety.
+
+map:
+  total_dimensions:
+    width_m: 500
+    depth_m: 200
+  topology: "open_area"  # ⚠ ZMĚNA VŮČI Workflow v0.2: 400m corridor → open-area
+  free_transition: true   # hráč se může volně vracet mezi zónami
+
+  zones:
+    - id: "hub"
+      name: "OKRAJ MĚSTA — Hub odboje"
+      role: "start"
+      dimensions:
+        width_m: 100
+        depth_m: 200
+      position_y: 0   # nejvyšší zóna v layoutu (start)
+      encounter_type: "non_combat_npc_dialog"
+      purpose: "Velitel briefing → výbava → quest start"
+      spawn_enabled: false
+      notes: "MĚSTO: spawn 0% dokud nedobyto (greybox: zůstává 0%)"
+
+    - id: "forest"
+      name: "LES"
+      role: "exploration"
+      dimensions:
+        width_m: 200
+        depth_m: 200
+      position_y: 200
+      encounter_type: "mix_combat_stealth"
+      purpose: "Průzkum, drone scout, low-density combat"
+      spawn_enabled: true
+      soft_cap_aliens: 8
+
+    - id: "module_zone"
+      name: "ZÓNA S MODULEM"
+      role: "climax"
+      dimensions:
+        width_m: 100
+        depth_m: 200
+      position_y: 400
+      encounter_type: "high_density_combat_climax"
+      purpose: "Stealth challenge, Puppet/Puppeteer, finále"
+      spawn_enabled: true
+      soft_cap_aliens: 15
+      contains:
+        - object: "module"
+          dimensions: { length_m: 40, width_m: 10, height_m: 5 }
+          position: "center"
+
+cover_requirements:
+  # ⚠ KRITICKÉ — alien crossbow escape behavior vyžaduje cover targets
+  spacing_m: [10, 15]
+  rationale: "Alien po crossbow hitu sprintuje k cover/keři/budově. Bez cover AI selže."
+  applies_to_zones: ["forest", "module_zone"]
+  greybox_implementation: "Šedé kvádry/válce 1×1×2m, rozmístěné systematicky"
+
+navmesh:
+  generate_for: ["forest", "module_zone", "hub"]
+  agent_radius_m: 0.5
+  agent_height_m: 2.0
+  walkable_slope_deg: 45
+
+# Vizuální style — greybox
+visual_style:
+  ground_color: "neutral_gray"
+  cover_color: "dark_gray"
+  zone_boundary_visualization: "ground_line_color_change"  # subtle
+  module_appearance:
+    color: "black"
+    visual_fx: "pulzující světelné linie (alien tech feel)"
+    visible_from_m: 100
+
+# Color coding entit (důležité pro testing)
+entity_color_coding:
+  player: { color: "blue", shape: "capsule_vertical" }
+  commander_npc: { color: "yellow", shape: "capsule_vertical" }
+  alien: { color: "green", shape: "capsule_vertical" }
+  puppet: { color: "orange", shape: "capsule_vertical" }
+  puppeteer: { color: "purple", shape: "capsule_vertical" }
+  wardog: { color: "red", shape: "capsule_horizontal" }   # ležící kapsle
+  hostile_human_v1plus: { color: "gray", shape: "capsule_vertical" }
+
+# Acceptance criteria reference
+acceptance_xlsx_section: "Map & Terrain"

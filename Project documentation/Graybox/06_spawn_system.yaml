@@ -1,0 +1,136 @@
+# =============================================================================
+# 06 — SPAWN SYSTEM (KEY DESIGN PILLAR)
+# =============================================================================
+# Implementační prompt: "Implementuj spawn manager s kaskádovými hody,
+# soft cap a migrací podle 06_spawn_system.yaml."
+# Zdroj: GreyboxSpec sekce 8, 12.9
+# Dependencies: 04_enemies.yaml (typy enemy), 01_world_map.yaml (zóny)
+# ⚠ KLÍČOVÁ MECHANIKA — plně implementovat.
+# =============================================================================
+
+design_intent:
+  - "Stochastický + dynamický spawn"
+  - "Heatmapa = pravděpodobnostní distribuce"
+  - "Konzistentní s lore: alieni teleportují (canon)"
+  - "ŽÁDNÉ edge spawnery — vše new = teleport"
+
+# =============================================================================
+# SPAWN MODES
+# =============================================================================
+spawn_modes:
+  teleport_spawn:
+    description: "Z ničeho nic, 2s VFX telegraph (rotující kruh)"
+    vfx_telegraph_s: 2
+    vfx_placeholder: "rotující kruh + pulse VFX na zemi"
+    after_telegraph: "alien se objeví na místě VFX"
+
+  wander:
+    description: "Jen už existing alieni se přesouvají uvnitř/mezi zónami"
+    creates_new_aliens: false
+
+# =============================================================================
+# SPAWN MODEL — kaskádové nezávislé hody
+# =============================================================================
+spawn_model:
+  tick_interval_s: 60   # každou minutu
+  rolls_per_zone_per_tick: 3
+  rolls_are_independent: true   # ⚠ DŮLEŽITÉ — všechny 3 se hází nezávisle
+
+  zones:
+    forest:
+      roll_1: { dice: "d100",     probability: 0.05,    spawns: 1 }    # 5%
+      roll_2: { dice: "d10000",   probability: 0.0025,  spawns: 2 }    # 0.25%
+      roll_3: { dice: "d1000000", probability: 0.000125, spawns: 3 }   # 0.0125%
+      soft_cap: 8
+
+    module_zone:
+      roll_1: { dice: "d100",     probability: 0.20,    spawns: 1 }    # 20%
+      roll_2: { dice: "d10000",   probability: 0.04,    spawns: 2 }    # 4%
+      roll_3: { dice: "d1000000", probability: 0.008,   spawns: 3 }    # 0.8%
+      soft_cap: 15
+
+    hub:
+      roll_1: { probability: 0, spawns: 0 }
+      roll_2: { probability: 0, spawns: 0 }
+      roll_3: { probability: 0, spawns: 0 }
+      soft_cap: null
+      note: "MĚSTO: 0% dokud nedobyto. V greyboxu zůstává 0%."
+
+# =============================================================================
+# WARDOG ATTACHMENT (po každém alien spawnu)
+# =============================================================================
+wardog_attachment:
+  trigger: "po každém alien spawnu (per spawned alien)"
+  probability:
+    module_zone: 0.10
+    other_zones: 0.02
+  rule: "wardog NIKDY sám — vždy attached k alien spawn"
+
+# =============================================================================
+# SOFT CAP & MIGRACE
+# =============================================================================
+soft_cap_behavior:
+  rule: "Při překročení soft cap: alieni migrují do sousedních zón"
+  migration_speed_kmh: 5.75   # walk speed
+  migration_targets: "sousední zóny v topologii"
+
+  greybox_constraints:
+    migration_enabled: true
+    attacks_on_hub_during_migration: false   # ⚠ greybox: bez útoků na hub
+
+# =============================================================================
+# PUPPETEER SPAWN (scripted, ne v běžném loopu)
+# =============================================================================
+puppeteer_spawn:
+  type: "scripted_event"
+  zone: "module_zone"          # PŘED MODULEM (V topologii: zóna s modulem)
+  trigger: "quest beat 3 — viz 07_quest_flow.yaml"
+
+  composition:
+    puppeteer_count: 1
+    puppet_count_random_range: [1, 4]
+    spawn_complete: true   # Puppeteer + Puppets spawn together
+
+  in_normal_spawn_loop: false
+
+# =============================================================================
+# LOGGING (telemetry hooks)
+# =============================================================================
+telemetry_hooks:
+  - event: "alien_spawn"
+    payload: ["zone", "count", "type"]
+  - event: "wardog_spawn"
+    payload: ["zone"]
+  - event: "puppeteer_spawn"
+    payload: ["zone", "puppet_count"]
+  - event: "migration_event"
+    payload: ["from_zone", "to_zone", "alien_count"]
+  - event: "spawn_distribution_log"
+    payload: ["timestamp", "zone", "roll_results"]
+
+# =============================================================================
+# Pseudocode — spawn tick (implementační vodítko)
+# =============================================================================
+pseudocode: |
+  EVERY 60 seconds:
+    FOR each zone in [forest, module_zone, hub]:
+      IF zone.aliens.count >= zone.soft_cap:
+        TRIGGER migration to adjacent zones (walk speed 5.75 km/h)
+        CONTINUE
+      
+      FOR each roll in zone.rolls (1, 2, 3):
+        IF random() < roll.probability:
+          spawned = spawn_aliens_via_teleport(zone, count=roll.spawns)
+          FOR each new_alien in spawned:
+            IF random() < zone.wardog_probability:
+              attach_wardog_to(new_alien)
+          LOG telemetry event
+
+# =============================================================================
+# Acceptance criteria reference
+# =============================================================================
+acceptance_xlsx_sections:
+  - "Spawn system — cascade rolls"
+  - "Spawn system — soft cap & migration"
+  - "Spawn system — wardog attachment"
+  - "Spawn system — puppeteer scripted"
