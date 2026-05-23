@@ -192,11 +192,10 @@
 
 ## Surfaced 2026-05-22 live test
 
-**TD-H14 🟡 Sprite floodfill alpha — SD often fails to produce white background**
-- Live test "potion bottle icon" prompt → SD vrátil image bez white pixelů u corners → 0 alpha pixels final.
-- Prompt augmentation "isolated on pure white background, centered, no shadow, clean edges" není deterministická — SD má vlastní styling preferences.
-- Workaround možnosti: (1) zvýšit cfg_scale na 15+, (2) hodit prompt přes Img2Img s explicit mask, (3) post-process přes rembg / SAM model, (4) try multiple seeds.
-- Trigger pro impl: Honza dělá batch sprite generation a kvalita alpha mask je blocking. Bez akce: sprite path je usable s honest gap.
+**TD-H14 ✅ RESOLVED 2026-05-23 (v1.3.3)** — Sprite alpha via `alpha_method` dispatch
+- Live test "potion bottle icon" (regression): edge_color = **85.5 % alpha** (224 243 / 262 144 px, 1 attempt, 7054 ms). Floodfill legacy = **0 % alpha, 2 attempts** (auto-retry verified). Honest gap message accurate in both cases.
+- Implementation in v1.3.3 commit `d37cbd1`: `alpha_method` param (default `edge_color`) + auto-retry on heuristic underfill + stronger sprite-mode prompt augmentation + opt-in `rembg` Python subprocess backend (async-safe stdout/stderr to avoid pipe-fill deadlock).
+- Remaining honest gap: full-frame subjects touching canvas border can poison median edge color → use `alpha_method=rembg`. Tracked in PRD v4.5 section 2.4 + per-method honest_gap text.
 
 **TD-X7 🟡 Sharing violation race condition v UCAF Poller**
 - Sporadické `System.IO.IOException: Sharing violation on path ...commands\pending\cmd_*.json` při ReadAllText v `UCAF_Listener.Poll()` UCAF_Listener.cs:162.
@@ -219,3 +218,4 @@
 |---|---|---|
 | 2026-05-22 | Phase H A+B v1.3.0 | Initial creation. Zachyceny TD-H1..H13, TD-G1..G5, TD-X1..X6, TD-S1..S6, TD-P1..P3. |
 | 2026-05-22 | Phase H live test v1.3.2 | Surfaced TD-H14 (sprite alpha real-world fail), TD-X7 (UCAF Poller race), TD-H15 (procedural isReadable). TD-H12 RESOLVED (resolution semantic verified, false alarm). |
+| 2026-05-23 | TD-H14 fix v1.3.3 | `alpha_method` dispatch + edge_color default + auto-retry + opt-in rembg subprocess. TD-H14 RESOLVED (live regression: 85.5 % vs 0 % alpha on same prompt). TD-X7 hit live during deploy — still open. |

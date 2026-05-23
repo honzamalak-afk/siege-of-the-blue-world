@@ -35,7 +35,7 @@ Phase H původní spec v v4.3 sekce 4.48 předpokládala **externí API** (DALL-
 |----|-----------------|--------|
 | FR-199 | `generate_texture` (provider=procedural\|local_sd) | ✅ DONE v1.3.2 |
 | FR-200 | `generate_texture_set` | ❌ DEFERRED — multi-call PBR orchestrace + Material wiring |
-| FR-201 | `generate_sprite` (provider=local_sd, floodfill alpha) | ✅ DONE v1.3.2 (honest gap: SD nevygeneruje vždy white bg → 0 alpha pixels možné) |
+| FR-201 | `generate_sprite` (provider=local_sd, alpha_method dispatch) | ✅ DONE v1.3.3 — alpha_method = edge_color (default, ~85% alpha typically) / floodfill (legacy) / rembg (opt-in subprocess) / none. Auto-retry on heuristic underfill. TD-H14 RESOLVED. |
 | FR-202 | `texture_variation` | ❌ DEFERRED — vyžaduje img2img SD endpoint |
 | FR-203 | `generate_sfx` | ❌ DEFERRED — lokální audio stack (AudioLDM2/Bark) future session |
 | FR-204 | `generate_music` | ❌ DEFERRED |
@@ -125,17 +125,28 @@ Forge `lllyasviel/stable-diffusion-webui-forge` je drop-in replacement A1111 —
 
 **Honest gap:** Forge server musí běžet když UCAF posílá request. Pokud neběží, command vrátí `error_code=sd_endpoint_unreachable` s hintem "spusť `.\\webui-user.bat` v `C:\\Tools\\stable-diffusion-webui-forge\\`".
 
-### 2.4 Sprite alpha extraction (FR-201)
+### 2.4 Sprite alpha extraction (FR-201 — enhanced v1.3.3)
 
-Per Honza select v této session: **floodfill from corners**, ne naive threshold.
+**Original v1.3.0–1.3.2:** floodfill from 4 corners, white-only (`RGB > 240`). Real-world test (2026-05-22 "potion bottle icon") returned **0 alpha pixels** when SD produced off-white / coloured background — TD-H14.
 
-Algorithm:
-1. SD vygeneruje image s prompt augmentation `"isolated subject on pure white background, centered, no shadow, clean edges"`
-2. C# floodfill od všech 4 rohů: pixel je alpha=0 právě tehdy, když je connected k rohu přes white-ish path (RGB > 240 každý kanál, 4-neighbor connectivity)
-3. Center subject (např. white shirt) zůstane opaque
-4. Soft edge: 1-pixel sigmoid blend na alpha boundary
+**v1.3.3 — `alpha_method` dispatch + auto-retry:**
 
-Honest gap: stále ne perfect, ale **měřitelně lepší** než naive `(R+G+B)/3 > threshold → alpha=0` (který by rozbil white-clothed subjects).
+| Method | What it does | Trade-off |
+|---|---|---|
+| `edge_color` (default) | Samples 1-px border → median RGB = bg color. Floods from corners with Chebyshev distance ≤ 40. | Handles off-white / coloured bg. Fails if subject touches canvas border (median poisoned). |
+| `floodfill` (legacy) | Pre-1.3.3 behaviour. White-only flood (RGB > 240) from 4 corners. | Kept for regression / when SD bg is truly white. |
+| `rembg` (opt-in) | `python -m rembg i` subprocess on Windows host. ONNX-based AI bg removal. | Requires `pip install rembg[cli]` + ~200 MB model on first run. Handles hair / glass / thin edges. |
+| `none` | No alpha postprocess. Raw SD image stored as-is. | For when caller wants the image without alpha layer. |
+
+**Auto-retry** (`auto_retry=true` by default, heuristic methods only): if `alpha_pixels < retry_threshold_pct (5%)` after first attempt, retry once with `cfg_scale + 3` and `seed + 1` (if seed was explicit; random seed re-rolled). Result reports `attempts` (1 or 2).
+
+**Prompt augmentation** (sprite mode):
+- Positive: `prompt + ", isolated subject, centered composition, pure white background, plain background, clean edges, studio lighting, no shadow, no scenery"`
+- Negative: user-supplied + `"complex background, scene, environment, busy background, gradient background, coloured background, dark background, noise, blur, frame, border, watermark, text"`
+
+**Soft edge:** 1-pixel boundary alpha=128 blend retained from v1.3.0.
+
+**Result type** (`UCAFGenerateSpriteResult`) gains `alpha_method` + `attempts` fields, plus method-specific `honest_gap` message.
 
 ### 2.5 AI metadata tag (FR-223 update)
 
@@ -165,7 +176,7 @@ Pro `provider=local_sd` je `ucaf_api` = `"sd_local"` + optional model name (pars
 **Honest gaps documented:**
 - Procedural quality není srovnatelná s DALL-E pro stylized art (chápání of "scary tree" vs "moss stone wall"). Procedural je deterministic geometry, ne semantic.
 - SD vyžaduje GPU + Forge server běží = single-machine dependency. Sandbox / CI bez GPU = SD path nefunkční. Procedural path funguje vždy.
-- Sprite alpha floodfill: subjects s tenkými průhlednými detaily (peří, vlasy, sklenice) budou misclassified. Pro icon-style assety stačí, pro character portrait potřeba bg-removal AI tool později.
+- Sprite alpha edge_color default (v1.3.3): subjects s tenkými průhlednými detaily (peří, vlasy, sklenice) nebo subjects touching canvas border budou misclassified. Pro tyto case → `alpha_method=rembg` (opt-in, vyžaduje `pip install rembg[cli]`).
 - Cubemap procedural je 6-face gradient skybox — žádné mraky, ne hvězdy, jen color blend. Pro real procedural sky → SDFs / clouds → samostatný command later.
 
 **Non-goals (v této session):**
@@ -226,8 +237,22 @@ Pro `provider=local_sd` je `ucaf_api` = `"sd_local"` + optional model name (pars
 - v1.3.1 → v1.3.2: try/catch (UnityException) nezachytil Unity 6.4 exception type → replaced preflight check na `TextureImporter.isReadable`
 
 **Surfaced honest gaps (deferred fixes):**
-- Sprite alpha floodfill: SD nevygeneruje vždy pure white bg → 0 alpha pixels možné (TD-H8)
-- Sharing violation race v UCAF poller — sporadic, ne v Phase H code (TD-X-NEW)
+- ~~Sprite alpha floodfill: SD nevygeneruje vždy pure white bg → 0 alpha pixels možné (TD-H8 / TD-H14)~~ → **RESOLVED v1.3.3** via `alpha_method=edge_color` default (see section 2.4)
+- Sharing violation race v UCAF poller — sporadic, ne v Phase H code (TD-X7, hit live během v1.3.3 deploy)
+
+---
+
+## 5b. v1.3.3 live test (2026-05-23)
+
+Same Forge endpoint, same SD model (`v1-5-pruned-emaonly`), same "potion bottle icon" prompt:
+
+| Test | alpha_method | Alpha pixels | Attempts | Time | Result |
+|---|---|---|---|---|---|
+| 1 | edge_color (new default) | 224 243 / 262 144 = **85.5%** | 1 | 7054 ms | ✅ PASS |
+| 2 | floodfill (legacy regression) | **0** | 2 (retry triggered) | 6438 ms | ✅ Honest gap reported correctly |
+| 3 | rembg | not tested this session (Python+rembg avail TBC) | — | — | ⏸ Deferred to live session N+1 |
+
+Conclusion: TD-H14 RESOLVED for typical icon-style sprites. Auto-retry mechanism verified working in floodfill case (attempts=2 reported).
 
 ---
 
