@@ -192,9 +192,13 @@
 
 ## Surfaced 2026-05-22 live test
 
-**TD-H14 ✅ RESOLVED 2026-05-23 (v1.3.3)** — Sprite alpha via `alpha_method` dispatch
-- Live test "potion bottle icon" (regression): edge_color = **85.5 % alpha** (224 243 / 262 144 px, 1 attempt, 7054 ms). Floodfill legacy = **0 % alpha, 2 attempts** (auto-retry verified). Honest gap message accurate in both cases.
-- Implementation in v1.3.3 commit `d37cbd1`: `alpha_method` param (default `edge_color`) + auto-retry on heuristic underfill + stronger sprite-mode prompt augmentation + opt-in `rembg` Python subprocess backend (async-safe stdout/stderr to avoid pipe-fill deadlock).
+**TD-H14 ✅ RESOLVED 2026-05-23 (v1.3.3 + v1.3.4 patch)** — Sprite alpha via `alpha_method` dispatch
+- Live test "potion bottle icon" (regression, 3 backends all on same SD seed/prompt):
+  - edge_color = **85.5 % alpha** (224 243 / 262 144 px, 1 attempt, 7054 ms)
+  - rembg     = **99.6 % alpha** (260 994 / 262 144 px, 1 attempt, 62 251 ms first run incl. U2Net download)
+  - floodfill = **0 % alpha**, 2 attempts (auto-retry verified, honest-gap message accurate)
+- Implementation in v1.3.3 commit `d37cbd1` + v1.3.4 commit `ef544f6`: `alpha_method` param (default `edge_color`) + auto-retry on heuristic underfill + stronger sprite-mode prompt augmentation + opt-in `rembg` Python subprocess backend (async-safe stdout/stderr to avoid pipe-fill deadlock).
+- **v1.3.4 fix**: rembg invocation switched from `python -m rembg` (rembg 2.x has no `__main__`) to `python -c "from rembg import remove; …"`. Also: better stderr-pattern hint matrix (recognises "No onnxruntime backend found" → `pip install rembg[cpu]`).
 - Remaining honest gap: full-frame subjects touching canvas border can poison median edge color → use `alpha_method=rembg`. Tracked in PRD v4.5 section 2.4 + per-method honest_gap text.
 
 **TD-X7 🟡 Sharing violation race condition v UCAF Poller**
@@ -219,3 +223,4 @@
 | 2026-05-22 | Phase H A+B v1.3.0 | Initial creation. Zachyceny TD-H1..H13, TD-G1..G5, TD-X1..X6, TD-S1..S6, TD-P1..P3. |
 | 2026-05-22 | Phase H live test v1.3.2 | Surfaced TD-H14 (sprite alpha real-world fail), TD-X7 (UCAF Poller race), TD-H15 (procedural isReadable). TD-H12 RESOLVED (resolution semantic verified, false alarm). |
 | 2026-05-23 | TD-H14 fix v1.3.3 | `alpha_method` dispatch + edge_color default + auto-retry + opt-in rembg subprocess. TD-H14 RESOLVED (live regression: 85.5 % vs 0 % alpha on same prompt). TD-X7 hit live during deploy — still open. |
+| 2026-05-23 | TD-H14 rembg patch v1.3.4 | rembg invocation `python -m rembg` → `python -c "from rembg import remove; …"` (rembg 2.x missing `__main__`). Honza installed `rembg[cpu]` on Python 3.14.4 (onnxruntime 1.26 cp314 wheel). Live test: rembg = 99.6 % alpha, 62 s first run. All 3 backends verified. |

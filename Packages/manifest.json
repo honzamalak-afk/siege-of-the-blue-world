@@ -1,6 +1,6 @@
 {
   "dependencies": {
-    "com.ucaf": "https://github.com/honzamalak-afk/ucaf.git#d37cbd1b2f8ccba11bbc1c9a9795f66dffc7e077",
+    "com.ucaf": "https://github.com/honzamalak-afk/ucaf.git#ef544f6f4a0bf015877f31cd6a0014acc705f80b",
     "com.unity.addressables": "2.3.16",
     "com.unity.ai.navigation": "2.0.12",
     "com.unity.cinemachine": "2.10.7",

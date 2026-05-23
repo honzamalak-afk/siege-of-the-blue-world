@@ -7,11 +7,11 @@
       "dependencies": {}
     },
     "com.ucaf": {
-      "version": "https://github.com/honzamalak-afk/ucaf.git#d37cbd1b2f8ccba11bbc1c9a9795f66dffc7e077",
+      "version": "https://github.com/honzamalak-afk/ucaf.git#ef544f6f4a0bf015877f31cd6a0014acc705f80b",
       "depth": 0,
       "source": "git",
       "dependencies": {},
-      "hash": "d37cbd1b2f8ccba11bbc1c9a9795f66dffc7e077"
+      "hash": "ef544f6f4a0bf015877f31cd6a0014acc705f80b"
     },
     "com.unity.addressables": {
       "version": "2.3.16",

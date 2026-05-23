@@ -35,7 +35,7 @@ Phase H původní spec v v4.3 sekce 4.48 předpokládala **externí API** (DALL-
 |----|-----------------|--------|
 | FR-199 | `generate_texture` (provider=procedural\|local_sd) | ✅ DONE v1.3.2 |
 | FR-200 | `generate_texture_set` | ❌ DEFERRED — multi-call PBR orchestrace + Material wiring |
-| FR-201 | `generate_sprite` (provider=local_sd, alpha_method dispatch) | ✅ DONE v1.3.3 — alpha_method = edge_color (default, ~85% alpha typically) / floodfill (legacy) / rembg (opt-in subprocess) / none. Auto-retry on heuristic underfill. TD-H14 RESOLVED. |
+| FR-201 | `generate_sprite` (provider=local_sd, alpha_method dispatch) | ✅ DONE v1.3.4 — alpha_method = edge_color (default, ~85% alpha typically) / floodfill (legacy) / rembg (opt-in, 99% alpha, AI-quality) / none. Auto-retry on heuristic underfill. TD-H14 RESOLVED + verified all 3 backends live. |
 | FR-202 | `texture_variation` | ❌ DEFERRED — vyžaduje img2img SD endpoint |
 | FR-203 | `generate_sfx` | ❌ DEFERRED — lokální audio stack (AudioLDM2/Bark) future session |
 | FR-204 | `generate_music` | ❌ DEFERRED |
@@ -250,9 +250,11 @@ Same Forge endpoint, same SD model (`v1-5-pruned-emaonly`), same "potion bottle 
 |---|---|---|---|---|---|
 | 1 | edge_color (new default) | 224 243 / 262 144 = **85.5%** | 1 | 7054 ms | ✅ PASS |
 | 2 | floodfill (legacy regression) | **0** | 2 (retry triggered) | 6438 ms | ✅ Honest gap reported correctly |
-| 3 | rembg | not tested this session (Python+rembg avail TBC) | — | — | ⏸ Deferred to live session N+1 |
+| 3 | rembg | 260 994 / 262 144 = **99.6 %** | 1 | 62 251 ms (first run incl. U2Net download) | ✅ PASS |
 
-Conclusion: TD-H14 RESOLVED for typical icon-style sprites. Auto-retry mechanism verified working in floodfill case (attempts=2 reported).
+Conclusion: TD-H14 RESOLVED for all three heuristic + AI backends. Auto-retry mechanism verified working in floodfill case (attempts=2 reported). rembg quality is decisively higher (99.6 % vs 85.5 % edge_color) but pays in time (62 s first / ~10 s subsequent) + Python dep.
+
+**v1.3.4 patch:** v1.3.3 originally invoked rembg as `python -m rembg i …` — rembg 2.x has no `__main__.py`, so this exited with `No module named rembg.__main__`. Fixed by calling the Python API directly via `python -c "from rembg import remove; …"` (rembg's snippet uses only single-quoted string literals so C# / shell escaping stays trivial). Also: hint matrix recognises "No onnxruntime backend found" (rembg's friendly import-time message) → routes to `pip install rembg[cpu]` (the `[cpu]` extra is what pulls `onnxruntime`, contrary to docs that say `[cli]`).
 
 ---
 
