@@ -7,6 +7,8 @@ Workspace: `ucaf_workspace/` (relativně od kořene projektu)
 **Role split:** Claude = junior dev, Jan = senior + art director + game designer.
 Podrobnosti v `PRD_Unity_Claude_Framework.md`.
 
+**Tech debt log:** `ucaf_technical_debts.md` (otevřené debty, deferred features, honest gaps, known gotchas). Před řešením staršího debt ověř, že je stále relevantní. Při přidání nové funkce nebo nálezu honest gap-u zapiš debt sem.
+
 ---
 
 ## Command protocol
